@@ -1,0 +1,84 @@
+services:
+  broker:
+    image: apache/kafka:latest
+    container_name: broker
+    networks:
+      - kafka_network
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://broker:9092,CONTROLLER://broker:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+
+  mongo:
+    image: mongo
+    container_name: mongo
+    networks:
+      - kafka_network
+    restart: always
+    volumes:
+      - mango_data:/data/db
+
+  mongodb_python:
+    image: kmeddas/consumer_api
+    networks:
+      - kafka_network
+    container_name: mongodb_python
+    depends_on:
+      - mongo
+      - broker
+
+  producer:
+    image: kmeddas/producer_api_without_flask
+    container_name: producer
+    networks:
+      - kafka_network
+    depends_on:
+      - broker
+
+  stats_api:
+    image: kmeddas/api_stat
+    container_name: stats_api
+    networks:
+      - kafka_network
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+    ports:
+      - 8000:8000
+    volumes:
+      - stat_data:/data
+
+  interface:
+    image: kmeddas/interface_cloud
+    container_name: interface
+    networks:
+      - kafka_network
+    depends_on:
+      - stats_api
+      - mongo
+      - broker
+    ports:
+      - 8501:8501
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    volumes:
+      - streamlit:/data
+networks:
+  kafka_network:
+
+
+volumes:
+  mango_data:
+  stat_data:
+  streamlit:
