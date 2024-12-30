@@ -23,7 +23,7 @@ This project comprises:
 ---
 
 ## Architecture du projet
-![Architecture](Architecture.jpg)
+![Architecture](Archi.jpg)
 
 
 ---
