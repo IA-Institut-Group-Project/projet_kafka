@@ -3,6 +3,9 @@ import json
 import datetime
 import time
 import random
+from flask import Flask
+import requests
+import threading
 
 # Fonction pour créer un producteur Kafka
 def create_producer():
@@ -22,64 +25,39 @@ def create_producer():
 # Initialisation du producteur Kafka
 producer = create_producer()
 
-# Liste des articles disponibles
-articles = [
-    'Boules de Noël', 'Guirlandes lumineuses', 'Sapins de Noël',
-    'Chaussettes de Noël', 'Calendriers de l Avent', 'Tasses festives',
-    'Bougies parfumées', 'Papiers cadeaux', 'Peluches de Noël', 'Ornements de table'
-]
+app = Flask(__name__)
 
-# Générer un article aléatoire
-def gen_article():
-    nom = random.choice(articles)
-    prix = int(round(random.uniform(5, 40)))  # Prix entre 5 et 50 euros
-    quantite = random.randint(1, 5)
-    return (nom, prix, quantite)
+def get_data():
+    try:    
+        response = requests.get("http://tickets:5000/tickets")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f"Error fetching tickets: {e}")
+        return None
 
-# Générer un ticket aléatoire
-def gen_ticket_random():
-    num_articles = random.randint(1, 10)
-    ticket = []
-    for _ in range(num_articles):
-        nom, prix, quantite = gen_article()
-        found = False
-        for item in ticket:
-            if item[0] == nom:
-                item[1] += prix
-                item[2] += quantite
-                found = True
-                break
-        if not found:
-            ticket.append([nom, prix, quantite])
-    return ticket
-
-# Classe Ticket
-class Ticket:
-    def __init__(self):
-        self.date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Date actuelle
-        self.article = gen_ticket_random()  # Articles générés aléatoirement
-        self.total = sum(a[1] * a[2] for a in self.article)  # Total du ticket
-
-# Fonction pour envoyer un ticket au broker Kafka
+        
+@app.route('/sendTickets', methods=['GET'])
 def send_ticket_to_kafka():
-    while True:
-        # Génération d'un ticket
-        ticket = Ticket()
-
-        # Structure des données du ticket
-        ticket_data = {
-            "date": ticket.date,
-            "articles": [{"Product": a[0], "price": a[1], "quantity": a[2]} for a in ticket.article],
-            "total": round(ticket.total, 2),
-        }
-
-        # Envoi du ticket au topic Kafka
+    # Envoi du ticket au topic Kafka
+    ticket_data = get_data()
+    if ticket_data:    
         producer.send('caisse', ticket_data)
         print(f"Ticket envoyé : {ticket_data}")
+        return "Ticket sent successfully", 200
+    else:
+        return "Failed to send ticket",500
 
-        # Pause de 2 secondes entre les envois de tickets
-        time.sleep(2)
+def auto_send_tickets():
+    while True:
+        try:
+            response = requests.get("http://producer:5001/sendTickets")
+            print(f"Auto-call to /sendTickets: {response.status_code}")
+        except Exception as e:
+            print(f"Error auto-calling /sendTickets: {e}")
+        time.sleep(10) 
 
-# Lancer l'envoi continu des tickets
+
 if __name__ == '__main__':
-    send_ticket_to_kafka()
+    threading.Thread(target=auto_send_tickets, daemon=True).start()
+    app.run(host='0.0.0.0', port=5001)
